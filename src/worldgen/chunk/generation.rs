@@ -1,56 +1,87 @@
-use super::block::*;
+use crate::worldgen::block::*;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
+use bevy::render::render_resource::Face;
+use std::hash::{Hash, Hasher};
 
+/// The size, in x, y, and z, of each chunk.
 pub const CHUNK_SIZE: usize = 16;
 
+/// The material to use for the chunk mesh.
+pub const CHUNK_MATERIAL: StandardMaterial = StandardMaterial {
+    base_color: Color::WHITE,
+    base_color_texture: None,
+    emissive: Color::BLACK,
+    emissive_texture: None,
+    perceptual_roughness: 1.0,
+    metallic: 0.0,
+    metallic_roughness_texture: None,
+    reflectance: 1.0,
+    normal_map_texture: None,
+    flip_normal_map_y: false,
+    occlusion_texture: None,
+    double_sided: false,
+    cull_mode: Some(Face::Back),
+    unlit: false,
+    fog_enabled: false,
+    alpha_mode: AlphaMode::Opaque,
+    depth_bias: 0.0,
+    depth_map: None,
+    parallax_depth_scale: 0.0,
+    parallax_mapping_method: ParallaxMappingMethod::Occlusion,
+    max_parallax_layer_count: 0.0,
+};
+
 pub struct Chunk {
-    pub pos: Vec3,
+    pub pos: IVec3,
     pub voxels: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+
+    empty: bool,
+}
+
+// The following trait implementations are required for using a hash map
+impl PartialEq for Chunk {
+    fn eq(&self, other: &Self) -> bool {
+        self.pos == other.pos
+    }
+}
+impl Eq for Chunk {}
+
+impl Hash for Chunk {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pos.hash(state);
+    }
 }
 
 impl Chunk {
-    pub fn empty(pos: Vec3) -> Self {
+    pub fn empty(pos: IVec3) -> Self {
         Self {
             pos,
             voxels: [[[Block::Air; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+            empty: true,
         }
     }
 
     pub fn generate(&mut self) {
-        info!("Starting world generation...");
-
         for x in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
-                    let world_pos = self.pos + Vec3::new(x as f32, y as f32, z as f32);
+                    let world_pos: Vec3 =
+                        self.pos.as_vec3() + Vec3::new(x as f32, y as f32, z as f32);
 
-                    let block = super::at_pos(world_pos.into());
+                    let block = crate::worldgen::gen::at_pos(world_pos.into());
                     self.voxels[x][y][z] = block;
+                    self.empty &= block == Block::Air;
                 }
             }
         }
-
-        info!("Finished world generation!");
     }
 
     pub fn is_empty(&self) -> bool {
-        let mut empty = true;
-
-        for i in &self.voxels {
-            for j in i {
-                for k in j {
-                    empty &= *k == Block::Air;
-                }
-            }
-        }
-
-        empty
+        self.empty
     }
 
     pub fn get_mesh(&self) -> Mesh {
-        info!("Starting to build chunk meshes...");
-
         let mut builder = MeshBuilder::new();
 
         for x in 0..CHUNK_SIZE {
@@ -184,7 +215,6 @@ impl Chunk {
             }
         }
 
-        info!("Finished building chunk meshes!");
         builder.to_mesh()
     }
 }

@@ -3,13 +3,12 @@ mod worldgen;
 
 use bevy::pbr::wireframe::WireframePlugin;
 use bevy::prelude::*;
-use bevy::utils::HashMap;
 
 use bevy::window::{CursorGrabMode, PrimaryWindow};
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WireframePlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(worldgen::WorldgenPlugin)

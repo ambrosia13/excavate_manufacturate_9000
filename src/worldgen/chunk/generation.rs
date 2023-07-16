@@ -1,41 +1,15 @@
 use crate::worldgen::block::*;
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
-use bevy::render::render_resource::Face;
 use std::hash::{Hash, Hasher};
 
 /// The size, in x, y, and z, of each chunk.
 pub const CHUNK_SIZE: usize = 16;
 
-/// The material to use for the chunk mesh.
-pub const CHUNK_MATERIAL: StandardMaterial = StandardMaterial {
-    base_color: Color::WHITE,
-    base_color_texture: None,
-    emissive: Color::BLACK,
-    emissive_texture: None,
-    perceptual_roughness: 1.0,
-    metallic: 0.0,
-    metallic_roughness_texture: None,
-    reflectance: 1.0,
-    normal_map_texture: None,
-    flip_normal_map_y: false,
-    occlusion_texture: None,
-    double_sided: false,
-    cull_mode: Some(Face::Back),
-    unlit: false,
-    fog_enabled: false,
-    alpha_mode: AlphaMode::Opaque,
-    depth_bias: 0.0,
-    depth_map: None,
-    parallax_depth_scale: 0.0,
-    parallax_mapping_method: ParallaxMappingMethod::Occlusion,
-    max_parallax_layer_count: 0.0,
-};
-
 pub struct Chunk {
     pub pos: IVec3,
     pub voxels: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
-    
+
     empty: bool,
 }
 
@@ -173,6 +147,7 @@ impl Chunk {
                         builder.add_face(
                             MeshBuilder::FACE_Z_FRONT,
                             MeshBuilder::NORMAL_Z_FRONT,
+                            MeshBuilder::UV_Z_FRONT,
                             local_pos,
                         );
                     }
@@ -180,6 +155,7 @@ impl Chunk {
                         builder.add_face(
                             MeshBuilder::FACE_Z_BACK,
                             MeshBuilder::NORMAL_Z_BACK,
+                            MeshBuilder::UV_Z_BACK,
                             local_pos,
                         );
                     }
@@ -187,6 +163,7 @@ impl Chunk {
                         builder.add_face(
                             MeshBuilder::FACE_Y_FRONT,
                             MeshBuilder::NORMAL_Y_FRONT,
+                            MeshBuilder::UV_Y_FRONT,
                             local_pos,
                         );
                     }
@@ -194,6 +171,7 @@ impl Chunk {
                         builder.add_face(
                             MeshBuilder::FACE_Y_BACK,
                             MeshBuilder::NORMAL_Y_BACK,
+                            MeshBuilder::UV_Y_BACK,
                             local_pos,
                         );
                     }
@@ -201,6 +179,7 @@ impl Chunk {
                         builder.add_face(
                             MeshBuilder::FACE_X_FRONT,
                             MeshBuilder::NORMAL_X_FRONT,
+                            MeshBuilder::UV_X_FRONT,
                             local_pos,
                         );
                     }
@@ -208,6 +187,7 @@ impl Chunk {
                         builder.add_face(
                             MeshBuilder::FACE_X_BACK,
                             MeshBuilder::NORMAL_X_BACK,
+                            MeshBuilder::UV_X_BACK,
                             local_pos,
                         );
                     }
@@ -223,6 +203,7 @@ impl Chunk {
 pub struct MeshBuilder {
     pub vertices: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
+    pub uvs: Vec<[f32; 2]>,
     pub indices: Vec<u32>,
 }
 
@@ -264,6 +245,45 @@ impl MeshBuilder {
         [0.0, 1.0, 1.0], // Back top
     ];
 
+    // --
+
+    pub const UV_Z_FRONT: [[f32; 2]; 4] = [
+        [0.0, 0.0], // Bottom left
+        [0.0, 1.0], // Top left
+        [1.0, 0.0], // Bottom right
+        [1.0, 1.0], // Top right
+    ];
+    pub const UV_Z_BACK: [[f32; 2]; 4] = [
+        [1.0, 0.0], // Bottom right
+        [1.0, 1.0], // Top right
+        [0.0, 0.0], // Bottom left
+        [0.0, 1.0], // Top left
+    ];
+    pub const UV_Y_FRONT: [[f32; 2]; 4] = [
+        [0.0, 1.0], // Front left
+        [0.0, 0.0], // Back left
+        [1.0, 1.0], // Front right
+        [1.0, 0.0], // Back right
+    ];
+    pub const UV_Y_BACK: [[f32; 2]; 4] = [
+        [0.0, 0.0], // Front left
+        [0.0, 1.0], // Back left
+        [1.0, 0.0], // Front right
+        [1.0, 1.0], // Back right
+    ];
+    pub const UV_X_FRONT: [[f32; 2]; 4] = [
+        [1.0, 0.0], // Front bottom
+        [1.0, 1.0], // Front top
+        [0.0, 0.0], // Back bottom
+        [0.0, 1.0], // Back top
+    ];
+    pub const UV_X_BACK: [[f32; 2]; 4] = [
+        [0.0, 0.0], // Front bottom
+        [0.0, 1.0], // Front top
+        [1.0, 0.0], // Back bottom
+        [1.0, 1.0], // Back top
+    ];
+
     pub const NORMAL_Z_FRONT: [[f32; 3]; 4] = [[0.0, 0.0, 1.0]; 4];
     pub const NORMAL_Z_BACK: [[f32; 3]; 4] = [[0.0, 0.0, -1.0]; 4];
     pub const NORMAL_Y_FRONT: [[f32; 3]; 4] = [[0.0, 1.0, 0.0]; 4];
@@ -275,6 +295,7 @@ impl MeshBuilder {
         Self {
             vertices: Vec::new(),
             normals: Vec::new(),
+            uvs: Vec::new(),
             indices: Vec::new(),
         }
     }
@@ -291,7 +312,13 @@ impl MeshBuilder {
     }
 
     /// Adds both the vertices and normals of the given face, provided the offset.
-    pub fn add_face(&mut self, mut face: [[f32; 3]; 4], normals: [[f32; 3]; 4], offset: Vec3) {
+    pub fn add_face(
+        &mut self,
+        mut face: [[f32; 3]; 4],
+        normals: [[f32; 3]; 4],
+        uvs: [[f32; 2]; 4],
+        offset: Vec3,
+    ) {
         for i in 0..4 {
             for j in 0..3 {
                 face[i][j] += offset[j];
@@ -305,6 +332,8 @@ impl MeshBuilder {
 
         self.vertices.extend_from_slice(&face);
         self.normals.extend_from_slice(&normals);
+        self.uvs.extend_from_slice(&uvs);
+
         self.indices
             .extend_from_slice(&Self::get_face_indices(starting_index as u32));
     }
@@ -314,6 +343,8 @@ impl MeshBuilder {
 
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
+
         mesh.set_indices(Some(Indices::U32(self.indices)));
 
         mesh

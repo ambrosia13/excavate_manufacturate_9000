@@ -1,11 +1,45 @@
 use crate::camera::PlayerCamera;
 use crate::worldgen::chunk::generation::*;
+use bevy::prelude::KeyCode::C;
 use bevy::prelude::*;
+use bevy::render::render_resource::Face;
 use bevy::utils::HashMap;
 
 // Should eventually be configurable
 pub const VIEW_DISTANCE: i32 = 8;
-const MAX_CHUNKS_PROCESSED_PER_ITER: usize = 16;
+pub const MAX_CHUNKS_PROCESSED_PER_ITER: usize = 16;
+
+/// The material to use for the chunk mesh.
+const CHUNK_MATERIAL: StandardMaterial = StandardMaterial {
+    base_color: Color::WHITE,
+    base_color_texture: None,
+    emissive: Color::BLACK,
+    emissive_texture: None,
+    perceptual_roughness: 0.5,
+    metallic: 0.0,
+    metallic_roughness_texture: None,
+    reflectance: 1.0,
+    normal_map_texture: None,
+    flip_normal_map_y: false,
+    occlusion_texture: None,
+    double_sided: false,
+    cull_mode: Some(Face::Back),
+    unlit: false,
+    fog_enabled: false,
+    alpha_mode: AlphaMode::Opaque,
+    depth_bias: 0.0,
+    depth_map: None,
+    parallax_depth_scale: 0.0,
+    parallax_mapping_method: ParallaxMappingMethod::Occlusion,
+    max_parallax_layer_count: 0.0,
+};
+
+pub fn chunk_material(asset_server: &Res<AssetServer>) -> StandardMaterial {
+    StandardMaterial {
+        base_color_texture: Some(asset_server.load("textures/atlas.png")),
+        ..CHUNK_MATERIAL
+    }
+}
 
 /// Marker for whether this entity is terrain generated from the chunk meshing process.
 #[derive(Component)]
@@ -34,11 +68,12 @@ pub fn spawn_initial_chunks(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut generated_chunks: ResMut<GeneratedChunks>,
     mut loaded_chunks: ResMut<LoadedChunks>,
+    asset_server: Res<AssetServer>,
 ) {
     // Initial render distance.
     // This doesn't need to be high, because other chunks will be loaded during runtime;
     // these chunks are the chunks that are loaded before the game starts.
-    let initial_view_distance = 1;
+    let initial_view_distance = 2;
 
     for x in -initial_view_distance..=initial_view_distance {
         for y in -initial_view_distance..=initial_view_distance {
@@ -61,7 +96,7 @@ pub fn spawn_initial_chunks(
                 commands
                     .spawn(PbrBundle {
                         mesh: meshes.add(mesh),
-                        material: materials.add(CHUNK_MATERIAL),
+                        material: materials.add(chunk_material(&asset_server)),
                         transform: Transform::from_translation(chunk.pos.as_vec3()),
                         ..default()
                     })
@@ -80,6 +115,7 @@ pub fn spawn_new_chunks(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut generated_chunks: ResMut<GeneratedChunks>,
     mut loaded_chunks: ResMut<LoadedChunks>,
+    asset_server: Res<AssetServer>,
     timer: Res<ChunkGenerationTimer>,
     camera_query: Query<&Transform, With<PlayerCamera>>,
 ) {
@@ -143,7 +179,7 @@ pub fn spawn_new_chunks(
                 commands
                     .spawn(PbrBundle {
                         mesh: meshes.add(mesh),
-                        material: materials.add(CHUNK_MATERIAL),
+                        material: materials.add(chunk_material(&asset_server)),
                         transform: Transform::from_translation(chunk_translation),
                         ..default()
                     })

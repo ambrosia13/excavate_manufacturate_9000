@@ -1,5 +1,6 @@
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
+use bevy::render::camera::MipBias;
 
 pub struct CameraPlugin;
 
@@ -19,7 +20,8 @@ fn spawn_camera(mut commands: Commands) {
             transform: Transform::from_xyz(-2.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
             ..Default::default()
         })
-        .insert(PlayerCamera);
+        .insert(PlayerCamera)
+        .insert(MipBias(10.0));
 }
 
 fn update_camera_position(

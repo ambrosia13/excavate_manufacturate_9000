@@ -8,6 +8,7 @@ use bevy::window::{CursorGrabMode, PrimaryWindow};
 
 fn main() {
     App::new()
+        .insert_resource(Msaa::Off)
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WireframePlugin)
         .add_plugins(camera::CameraPlugin)

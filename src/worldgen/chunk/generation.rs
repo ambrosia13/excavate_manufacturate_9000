@@ -67,6 +67,8 @@ impl Chunk {
 
                     let local_pos = Vec3::new(x as f32, y as f32, z as f32);
 
+                    let texture_config = self.voxels[x][y][z].get_texture_config();
+
                     let pos_z = z.overflowing_add(1).0;
                     let neg_z = z.overflowing_sub(1).0;
                     let pos_y = y.overflowing_add(1).0;
@@ -149,6 +151,7 @@ impl Chunk {
                             MeshBuilder::NORMAL_Z_FRONT,
                             MeshBuilder::UV_Z_FRONT,
                             local_pos,
+                            texture_config,
                         );
                     }
                     if add_face_neg_z {
@@ -157,6 +160,7 @@ impl Chunk {
                             MeshBuilder::NORMAL_Z_BACK,
                             MeshBuilder::UV_Z_BACK,
                             local_pos,
+                            texture_config,
                         );
                     }
                     if add_face_pos_y {
@@ -165,6 +169,7 @@ impl Chunk {
                             MeshBuilder::NORMAL_Y_FRONT,
                             MeshBuilder::UV_Y_FRONT,
                             local_pos,
+                            texture_config,
                         );
                     }
                     if add_face_neg_y {
@@ -173,6 +178,7 @@ impl Chunk {
                             MeshBuilder::NORMAL_Y_BACK,
                             MeshBuilder::UV_Y_BACK,
                             local_pos,
+                            texture_config,
                         );
                     }
                     if add_face_pos_x {
@@ -181,6 +187,7 @@ impl Chunk {
                             MeshBuilder::NORMAL_X_FRONT,
                             MeshBuilder::UV_X_FRONT,
                             local_pos,
+                            texture_config,
                         );
                     }
                     if add_face_neg_x {
@@ -189,6 +196,7 @@ impl Chunk {
                             MeshBuilder::NORMAL_X_BACK,
                             MeshBuilder::UV_X_BACK,
                             local_pos,
+                            texture_config,
                         );
                     }
                 }
@@ -311,19 +319,48 @@ impl MeshBuilder {
         ]
     }
 
+    fn transform_uvs(uvs: &mut [[f32; 2]; 4], texture_config: BlockTextureConfig) {
+        let one_texel = (1.0 / ATLAS_SIZE.0 as f32, 1.0 / ATLAS_SIZE.1 as f32);
+        let half_texel = (one_texel.0 * 0.5, one_texel.1 * 0.5);
+
+        let starting_x = texture_config.starting_x;
+        let starting_y = texture_config.starting_y;
+
+        // Assumption that every texture is 16x16
+        let ending_x = starting_x + 16;
+        let ending_y = starting_y + 16;
+
+        for uv in uvs.iter_mut() {
+            if uv[0] < 0.5 {
+                uv[0] = starting_x as f32 / ATLAS_SIZE.0 as f32;
+            } else {
+                uv[0] = ending_x as f32 / ATLAS_SIZE.0 as f32;
+            }
+
+            if uv[1] < 0.5 {
+                uv[1] = starting_y as f32 / ATLAS_SIZE.1 as f32;
+            } else {
+                uv[1] = ending_y as f32 / ATLAS_SIZE.1 as f32;
+            }
+        }
+    }
+
     /// Adds both the vertices and normals of the given face, provided the offset.
     pub fn add_face(
         &mut self,
         mut face: [[f32; 3]; 4],
         normals: [[f32; 3]; 4],
-        uvs: [[f32; 2]; 4],
+        mut uvs: [[f32; 2]; 4],
         offset: Vec3,
+        texture_config: BlockTextureConfig,
     ) {
         for i in 0..4 {
             for j in 0..3 {
                 face[i][j] += offset[j];
             }
         }
+
+        Self::transform_uvs(&mut uvs, texture_config);
 
         // The starting index of the vertices that are just going to be added to our Vec
         // E.g. if one face was added, the length would be 4, and the next face will start

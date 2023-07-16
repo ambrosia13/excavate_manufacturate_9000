@@ -50,8 +50,6 @@ pub fn spawn_initial_chunks(
 
                 let mesh = chunk.get_mesh();
 
-                info!("Drawing chunk!");
-
                 commands
                     .spawn(PbrBundle {
                         mesh: meshes.add(mesh),
@@ -91,9 +89,6 @@ pub fn spawn_new_chunks(
 
                 // This chunk was already generated, don't waste time generating it again
                 if generated_chunks.0.contains_key(&(pos.x, pos.y, pos.z)) {
-                    info!(
-                        "Skipping chunk generation because this chunk was already generated: {pos}"
-                    );
                     continue;
                 }
 
@@ -107,8 +102,6 @@ pub fn spawn_new_chunks(
                 }
 
                 let mesh = chunk.get_mesh();
-
-                info!("Drawing chunk at {pos}!");
 
                 commands
                     .spawn(PbrBundle {

@@ -10,8 +10,9 @@ pub struct WorldgenPlugin;
 impl Plugin for WorldgenPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(chunk::GeneratedChunks(HashMap::new()))
+            .insert_resource(chunk::LoadedChunks(HashMap::new()))
             .insert_resource(chunk::ChunkGenerationTimer(Timer::from_seconds(
-                1.0,
+                0.05,
                 TimerMode::Repeating,
             )))
             .add_systems(Startup, chunk::spawn_initial_chunks)

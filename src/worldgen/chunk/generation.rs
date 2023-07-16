@@ -35,7 +35,7 @@ pub const CHUNK_MATERIAL: StandardMaterial = StandardMaterial {
 pub struct Chunk {
     pub pos: IVec3,
     pub voxels: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
-
+    
     empty: bool,
 }
 

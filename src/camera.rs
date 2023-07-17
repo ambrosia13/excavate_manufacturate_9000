@@ -68,7 +68,7 @@ fn update_camera_position(
     }
 
     if movement.length_squared() > 0.0 {
-        const MOVEMENT_SPEED: f32 = 0.2;
+        const MOVEMENT_SPEED: f32 = 1.0;
         transform.translation += MOVEMENT_SPEED * movement.normalize();
     }
 }

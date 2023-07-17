@@ -28,7 +28,7 @@ fn configure_window(mut window_query: Query<&mut Window, With<PrimaryWindow>>) {
 fn spawn_light(mut commands: Commands) {
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            color: Color::rgb(1.0, 0.8, 0.5),
+            color: Color::rgb(1.0, 0.9, 0.8),
             illuminance: 10000.0,
             shadows_enabled: true,
             ..default()

@@ -6,6 +6,7 @@ use std::hash::{Hash, Hasher};
 /// The size, in x, y, and z, of each chunk.
 pub const CHUNK_SIZE: usize = 16;
 
+#[derive(Debug)]
 pub struct Chunk {
     pub pos: IVec3,
     pub voxels: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],

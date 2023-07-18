@@ -3,7 +3,7 @@ pub mod chunk;
 pub mod gen;
 
 use bevy::prelude::*;
-use bevy::utils::HashMap;
+use bevy::utils::{HashMap, HashSet};
 use crossbeam::queue::SegQueue;
 use std::sync::{Arc, Mutex};
 
@@ -19,7 +19,9 @@ impl Plugin for WorldgenPlugin {
             map: Arc::new(Mutex::new(HashMap::new())),
         })
         .insert_resource(chunk::multithreading::ChunkQueue(Arc::new(SegQueue::new())))
-        .insert_resource(chunk::multithreading::LoadedChunks { chunks: Vec::new() })
+        .insert_resource(chunk::multithreading::LoadedChunks {
+            chunks: HashSet::new(),
+        })
         //.add_systems(Startup, chunk::spawn_initial_chunks)
         .add_systems(
             Update,

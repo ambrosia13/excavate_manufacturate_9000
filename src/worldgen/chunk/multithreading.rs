@@ -2,7 +2,8 @@ use super::interface::*;
 use crate::camera::*;
 use crate::worldgen::chunk::{Chunk, CHUNK_SIZE};
 use bevy::prelude::*;
-use bevy::utils::HashMap;
+use bevy::reflect::List;
+use bevy::utils::{HashMap, HashSet};
 use crossbeam::queue::SegQueue;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -82,11 +83,11 @@ fn generate_chunks_worker(
     }
 }
 
-/// System that generates chunks in parallel. This doesn't actually load chunks,
-/// those will have to be done separately in a single-threaded manner, as far as I know.
+/// System that generates chunks in parallel. This doesn't actually load chunks, it just generates
+/// them and stores them.
 pub fn generate_chunks_multithreaded(
-    mut generated_chunks: ResMut<GeneratedChunks>,
-    mut chunk_queue: ResMut<ChunkQueue>,
+    generated_chunks: ResMut<GeneratedChunks>,
+    chunk_queue: ResMut<ChunkQueue>,
 ) {
     let num_threads = num_cpus::get();
 
@@ -110,7 +111,7 @@ pub fn generate_chunks_multithreaded(
 /// If a chunk position is in this list, then it is loaded.
 #[derive(Resource)]
 pub struct LoadedChunks {
-    pub chunks: Vec<(i32, i32, i32)>,
+    pub chunks: HashSet<(i32, i32, i32)>,
 }
 
 pub fn load_generated_chunks(
@@ -127,18 +128,25 @@ pub fn load_generated_chunks(
 
     let camera_transform = camera_query.get_single().unwrap();
     let camera_pos = camera_transform.translation;
-
     let camera_chunk_pos = (camera_pos / CHUNK_SIZE as f32).as_ivec3();
 
-    for (chunk_pos, chunk) in map.iter() {
-        let range = (-VIEW_DISTANCE..=VIEW_DISTANCE);
+    let range = (-VIEW_DISTANCE..=VIEW_DISTANCE);
 
-        let offsetted_chunk_pos = camera_chunk_pos + IVec3::from(*chunk_pos);
+    let mut chunks_spawned = 0;
+
+    for (chunk_pos, chunk) in map.iter() {
+        if chunks_spawned == MAX_CHUNKS_PROCESSED_PER_ITER {
+            return;
+        }
+
+        let offsetted_chunk_pos = camera_chunk_pos - IVec3::from(*chunk_pos);
 
         // Only load the chunk if it's in the view distance
+        // This is required to prevent this system from trying to spawn
+        // chunks that the despawn system has just destroyed.
         if !(range.contains(&offsetted_chunk_pos.x)
-            || range.contains(&offsetted_chunk_pos.y)
-            || range.contains(&offsetted_chunk_pos.z))
+            && range.contains(&offsetted_chunk_pos.y)
+            && range.contains(&offsetted_chunk_pos.z))
         {
             continue;
         }
@@ -159,7 +167,9 @@ pub fn load_generated_chunks(
             })
             .insert(ChunkedTerrain);
 
-        loaded_chunks.chunks.push(*chunk_pos);
+        loaded_chunks.chunks.insert(*chunk_pos);
+
+        chunks_spawned += 1;
     }
 }
 
@@ -173,7 +183,7 @@ pub fn unload_chunks(
     let camera_pos = camera_transform.translation;
     let camera_chunk_pos = (camera_pos / CHUNK_SIZE as f32).as_ivec3();
 
-    let view_distance_range = (-VIEW_DISTANCE..=VIEW_DISTANCE);
+    let range = (-VIEW_DISTANCE..=VIEW_DISTANCE);
 
     let mut chunks_despawned = 0;
 
@@ -184,18 +194,18 @@ pub fn unload_chunks(
 
         let chunk_position = transform.translation.as_ivec3() / CHUNK_SIZE as i32;
 
-        let diff = chunk_position - camera_chunk_pos;
+        let offsetted_chunk_pos = chunk_position - camera_chunk_pos;
 
         // If the chunk isn't in the view distance, despawn it
-        if view_distance_range.contains(&diff.x)
-            || view_distance_range.contains(&diff.y)
-            || view_distance_range.contains(&diff.z)
+        if !(range.contains(&offsetted_chunk_pos.x)
+            && range.contains(&offsetted_chunk_pos.y)
+            && range.contains(&offsetted_chunk_pos.z))
         {
             commands.entity(entity).despawn();
 
             loaded_chunks
                 .chunks
-                .retain(|&x| x != (chunk_position.x, chunk_position.y, chunk_position.z));
+                .remove::<(i32, i32, i32)>(&chunk_position.into());
 
             chunks_despawned += 1;
         }

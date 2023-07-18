@@ -1,117 +1,57 @@
-use super::interface::*;
-use crate::camera::*;
-use crate::worldgen::chunk::{Chunk, CHUNK_SIZE};
+use crate::camera::PlayerCamera;
+use crate::worldgen::chunk::{
+    chunk_material, Chunk, ChunkedTerrain, GeneratedChunks, LoadedChunks, CHUNK_SIZE,
+    MAX_CHUNKS_PROCESSED_PER_ITER, VIEW_DISTANCE,
+};
 use bevy::prelude::*;
-use bevy::reflect::List;
-use bevy::utils::{HashMap, HashSet};
-use crossbeam::queue::SegQueue;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
-#[derive(Resource)]
-pub struct GeneratedChunks {
-    pub map: Arc<Mutex<HashMap<(i32, i32, i32), Chunk>>>,
-}
-
-#[derive(Resource)]
-pub struct ChunkQueue(pub Arc<SegQueue<(i32, i32, i32)>>);
-
-/// Fills the chunk queue with values in the current render distance.
-pub fn fill_chunk_queue(
+pub fn spawn_initial_chunks(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     generated_chunks: ResMut<GeneratedChunks>,
-    mut chunk_queue: ResMut<ChunkQueue>,
-
-    camera_query: Query<&Transform, With<PlayerCamera>>,
-
-    chunk_generation_timer: Res<ChunkGenerationTimer>,
+    mut loaded_chunks: ResMut<LoadedChunks>,
+    asset_server: Res<AssetServer>,
 ) {
-    if !chunk_generation_timer.0.just_finished() {
-        return;
-    }
+    // Initial render distance.
+    // This doesn't need to be high, because other chunks will be loaded during runtime;
+    // these chunks are the chunks that are loaded before the game starts.
+    let initial_view_distance = 2;
 
-    let camera_transform = camera_query.get_single().unwrap();
-    let camera_pos = camera_transform.translation;
+    let mut chunk_map = generated_chunks.map.lock().unwrap();
 
-    let camera_chunk_pos = (camera_pos / CHUNK_SIZE as f32).as_ivec3();
+    for x in -initial_view_distance..=initial_view_distance {
+        for y in -initial_view_distance..=initial_view_distance {
+            for z in -initial_view_distance..=initial_view_distance {
+                let pos = IVec3::new(x, y, z);
 
-    let map = generated_chunks.map.lock().unwrap();
+                let mut chunk = Chunk::empty(pos * CHUNK_SIZE as i32);
+                chunk.generate();
 
-    let mut num_chunks_added = 0;
+                // Skip the whole mesh-making-process for empty chunks
+                if chunk.is_empty() {
+                    chunk_map.insert((pos.x, pos.y, pos.z), chunk);
+                    loaded_chunks.chunks.insert((pos.x, pos.y, pos.z));
 
-    for x in -VIEW_DISTANCE..=VIEW_DISTANCE {
-        for y in -VIEW_DISTANCE..=VIEW_DISTANCE {
-            for z in -VIEW_DISTANCE..=VIEW_DISTANCE {
-                if num_chunks_added == MAX_CHUNKS_PROCESSED_PER_ITER {
-                    return;
-                }
-
-                let pos = IVec3::new(x, y, z) + camera_chunk_pos;
-                let pos_tuple = (pos.x, pos.y, pos.z);
-
-                // A chunk was already generated, don't add it to the queue
-                if map.contains_key(&pos_tuple) {
                     continue;
                 }
 
-                chunk_queue.0.push(pos_tuple);
+                let mesh = chunk.get_mesh();
 
-                num_chunks_added += 1;
+                commands
+                    .spawn(PbrBundle {
+                        mesh: meshes.add(mesh),
+                        material: materials.add(chunk_material(&asset_server)),
+                        transform: Transform::from_translation(chunk.pos.as_vec3()),
+                        ..default()
+                    })
+                    .insert(ChunkedTerrain);
+
+                chunk_map.insert((pos.x, pos.y, pos.z), chunk);
+                loaded_chunks.chunks.insert((pos.x, pos.y, pos.z));
             }
         }
     }
-}
-
-/// Helper function that runs on each thread; generating chunks in the chunk queue
-/// and storing it in the generated chunks map.
-fn generate_chunks_worker(
-    chunks: Arc<Mutex<HashMap<(i32, i32, i32), Chunk>>>,
-    queue: Arc<SegQueue<(i32, i32, i32)>>,
-) {
-    while let Some(chunk_pos) = queue.pop() {
-        let mut map = chunks.lock().unwrap();
-
-        // Chunk has already been generated
-        if map.contains_key(&chunk_pos) {
-            continue;
-        }
-
-        let chunk_pos_vec = IVec3::from(chunk_pos);
-        let mut chunk = Chunk::empty(chunk_pos_vec * CHUNK_SIZE as i32);
-        chunk.generate();
-
-        map.insert(chunk_pos, chunk);
-    }
-}
-
-/// System that generates chunks in parallel. This doesn't actually load chunks, it just generates
-/// them and stores them.
-pub fn generate_chunks_multithreaded(
-    generated_chunks: ResMut<GeneratedChunks>,
-    chunk_queue: ResMut<ChunkQueue>,
-) {
-    let num_threads = num_cpus::get();
-
-    let mut handles = Vec::new();
-    for _ in 0..num_threads {
-        let chunks = Arc::clone(&generated_chunks.map);
-        let queue = Arc::clone(&chunk_queue.0);
-
-        let handle = thread::spawn(move || {
-            generate_chunks_worker(chunks, queue);
-        });
-
-        handles.push(handle);
-    }
-
-    for handle in handles {
-        handle.join().unwrap();
-    }
-}
-
-/// If a chunk position is in this list, then it is loaded.
-#[derive(Resource)]
-pub struct LoadedChunks {
-    pub chunks: HashSet<(i32, i32, i32)>,
 }
 
 pub fn load_generated_chunks(

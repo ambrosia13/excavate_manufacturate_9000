@@ -1,390 +1,102 @@
-use crate::worldgen::block::*;
+use crate::camera::PlayerCamera;
+use crate::worldgen::chunk::timer::ChunkGenerationTimer;
+use crate::worldgen::chunk::{
+    Chunk, ChunkQueue, GeneratedChunks, CHUNK_SIZE, MAX_CHUNKS_PROCESSED_PER_ITER, VIEW_DISTANCE,
+};
 use bevy::prelude::*;
-use bevy::render::mesh::{Indices, PrimitiveTopology};
-use std::hash::{Hash, Hasher};
+use bevy::utils::HashMap;
+use crossbeam::queue::SegQueue;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-/// The size, in x, y, and z, of each chunk.
-pub const CHUNK_SIZE: usize = 16;
+/// Fills the chunk queue with values in the current render distance.
+pub fn fill_chunk_queue(
+    generated_chunks: ResMut<GeneratedChunks>,
+    mut chunk_queue: ResMut<ChunkQueue>,
 
-#[derive(Debug)]
-pub struct Chunk {
-    pub pos: IVec3,
-    pub voxels: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+    camera_query: Query<&Transform, With<PlayerCamera>>,
 
-    empty: bool,
-}
-
-// The following trait implementations are required for using a hash map
-impl PartialEq for Chunk {
-    fn eq(&self, other: &Self) -> bool {
-        self.pos == other.pos
-    }
-}
-impl Eq for Chunk {}
-
-impl Hash for Chunk {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.pos.hash(state);
-    }
-}
-
-impl Chunk {
-    pub fn empty(pos: IVec3) -> Self {
-        Self {
-            pos,
-            voxels: [[[Block::Air; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
-            empty: true,
-        }
+    chunk_generation_timer: Res<ChunkGenerationTimer>,
+) {
+    if !chunk_generation_timer.0.just_finished() {
+        return;
     }
 
-    pub fn generate(&mut self) {
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                for z in 0..CHUNK_SIZE {
-                    let world_pos: Vec3 =
-                        self.pos.as_vec3() + Vec3::new(x as f32, y as f32, z as f32);
+    let camera_transform = camera_query.get_single().unwrap();
+    let camera_pos = camera_transform.translation;
 
-                    let block = crate::worldgen::gen::at_pos(world_pos.into());
-                    self.voxels[x][y][z] = block;
-                    self.empty &= block == Block::Air;
+    let camera_chunk_pos = (camera_pos / CHUNK_SIZE as f32).as_ivec3();
+
+    let map = generated_chunks.map.lock().unwrap();
+
+    let mut num_chunks_added = 0;
+
+    for x in -VIEW_DISTANCE..=VIEW_DISTANCE {
+        for y in -VIEW_DISTANCE..=VIEW_DISTANCE {
+            for z in -VIEW_DISTANCE..=VIEW_DISTANCE {
+                if num_chunks_added == MAX_CHUNKS_PROCESSED_PER_ITER {
+                    return;
                 }
-            }
-        }
-    }
 
-    pub fn is_empty(&self) -> bool {
-        self.empty
-    }
+                let pos = IVec3::new(x, y, z) + camera_chunk_pos;
+                let pos_tuple = (pos.x, pos.y, pos.z);
 
-    pub fn get_mesh(&self) -> Mesh {
-        let mut builder = MeshBuilder::new();
-
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                for z in 0..CHUNK_SIZE {
-                    if !self.voxels[x][y][z].is_opaque() {
-                        continue;
-                    }
-
-                    let local_pos = Vec3::new(x as f32, y as f32, z as f32);
-
-                    let texture_config = self.voxels[x][y][z].get_texture_config();
-
-                    let pos_z = z.overflowing_add(1).0;
-                    let neg_z = z.overflowing_sub(1).0;
-                    let pos_y = y.overflowing_add(1).0;
-                    let neg_y = y.overflowing_sub(1).0;
-                    let pos_x = x.overflowing_add(1).0;
-                    let neg_x = x.overflowing_sub(1).0;
-
-                    let neighbor_pos_z = if (pos_z).clamp(0, CHUNK_SIZE - 1) == (pos_z) {
-                        Some(self.voxels[x][y][pos_z])
-                    } else {
-                        None
-                    };
-                    let neighbor_neg_z = if (neg_z).clamp(0, CHUNK_SIZE - 1) == (neg_z) {
-                        Some(self.voxels[x][y][neg_z])
-                    } else {
-                        None
-                    };
-                    let neighbor_pos_y = if (pos_y).clamp(0, CHUNK_SIZE - 1) == (pos_y) {
-                        Some(self.voxels[x][pos_y][z])
-                    } else {
-                        None
-                    };
-                    let neighbor_neg_y = if (neg_y).clamp(0, CHUNK_SIZE - 1) == (neg_y) {
-                        Some(self.voxels[x][neg_y][z])
-                    } else {
-                        None
-                    };
-                    let neighbor_pos_x = if (pos_x).clamp(0, CHUNK_SIZE - 1) == (pos_x) {
-                        Some(self.voxels[pos_x][y][z])
-                    } else {
-                        None
-                    };
-                    let neighbor_neg_x = if (neg_x).clamp(0, CHUNK_SIZE - 1) == (neg_x) {
-                        Some(self.voxels[neg_x][y][z])
-                    } else {
-                        None
-                    };
-
-                    let mut add_face_pos_z = true;
-                    let mut add_face_neg_z = true;
-                    let mut add_face_pos_y = true;
-                    let mut add_face_neg_y = true;
-                    let mut add_face_pos_x = true;
-                    let mut add_face_neg_x = true;
-
-                    if let Some(neighbor_pos_z) = neighbor_pos_z {
-                        if neighbor_pos_z.is_opaque() {
-                            add_face_pos_z = false;
-                        }
-                    }
-                    if let Some(neighbor_neg_z) = neighbor_neg_z {
-                        if neighbor_neg_z.is_opaque() {
-                            add_face_neg_z = false;
-                        }
-                    }
-                    if let Some(neighbor_pos_y) = neighbor_pos_y {
-                        if neighbor_pos_y.is_opaque() {
-                            add_face_pos_y = false;
-                        }
-                    }
-                    if let Some(neighbor_neg_y) = neighbor_neg_y {
-                        if neighbor_neg_y.is_opaque() {
-                            add_face_neg_y = false;
-                        }
-                    }
-                    if let Some(neighbor_pos_x) = neighbor_pos_x {
-                        if neighbor_pos_x.is_opaque() {
-                            add_face_pos_x = false;
-                        }
-                    }
-                    if let Some(neighbor_neg_x) = neighbor_neg_x {
-                        if neighbor_neg_x.is_opaque() {
-                            add_face_neg_x = false;
-                        }
-                    }
-
-                    if add_face_pos_z {
-                        builder.add_face(
-                            MeshBuilder::FACE_Z_FRONT,
-                            MeshBuilder::NORMAL_Z_FRONT,
-                            MeshBuilder::UV_Z_FRONT,
-                            local_pos,
-                            texture_config,
-                        );
-                    }
-                    if add_face_neg_z {
-                        builder.add_face(
-                            MeshBuilder::FACE_Z_BACK,
-                            MeshBuilder::NORMAL_Z_BACK,
-                            MeshBuilder::UV_Z_BACK,
-                            local_pos,
-                            texture_config,
-                        );
-                    }
-                    if add_face_pos_y {
-                        builder.add_face(
-                            MeshBuilder::FACE_Y_FRONT,
-                            MeshBuilder::NORMAL_Y_FRONT,
-                            MeshBuilder::UV_Y_FRONT,
-                            local_pos,
-                            texture_config,
-                        );
-                    }
-                    if add_face_neg_y {
-                        builder.add_face(
-                            MeshBuilder::FACE_Y_BACK,
-                            MeshBuilder::NORMAL_Y_BACK,
-                            MeshBuilder::UV_Y_BACK,
-                            local_pos,
-                            texture_config,
-                        );
-                    }
-                    if add_face_pos_x {
-                        builder.add_face(
-                            MeshBuilder::FACE_X_FRONT,
-                            MeshBuilder::NORMAL_X_FRONT,
-                            MeshBuilder::UV_X_FRONT,
-                            local_pos,
-                            texture_config,
-                        );
-                    }
-                    if add_face_neg_x {
-                        builder.add_face(
-                            MeshBuilder::FACE_X_BACK,
-                            MeshBuilder::NORMAL_X_BACK,
-                            MeshBuilder::UV_X_BACK,
-                            local_pos,
-                            texture_config,
-                        );
-                    }
+                // A chunk was already generated, don't add it to the queue
+                if map.contains_key(&pos_tuple) {
+                    continue;
                 }
+
+                chunk_queue.0.push(pos_tuple);
+
+                num_chunks_added += 1;
             }
         }
-
-        builder.to_mesh()
     }
 }
 
-/// Utility object for building the chunk meshes
-pub struct MeshBuilder {
-    pub vertices: Vec<[f32; 3]>,
-    pub normals: Vec<[f32; 3]>,
-    pub uvs: Vec<[f32; 2]>,
-    pub indices: Vec<u32>,
+/// Helper function that runs on each thread; generating chunks in the chunk queue
+/// and storing it in the generated chunks map.
+fn generate_chunks_worker(
+    chunks: Arc<Mutex<HashMap<(i32, i32, i32), Chunk>>>,
+    queue: Arc<SegQueue<(i32, i32, i32)>>,
+) {
+    while let Some(chunk_pos) = queue.pop() {
+        let mut map = chunks.lock().unwrap();
+
+        // Chunk has already been generated
+        if map.contains_key(&chunk_pos) {
+            continue;
+        }
+
+        let chunk_pos_vec = IVec3::from(chunk_pos);
+        let mut chunk = Chunk::empty(chunk_pos_vec * CHUNK_SIZE as i32);
+        chunk.generate();
+
+        map.insert(chunk_pos, chunk);
+    }
 }
 
-impl MeshBuilder {
-    pub const FACE_Z_FRONT: [[f32; 3]; 4] = [
-        [0.0, 0.0, 1.0], // Bottom left
-        [0.0, 1.0, 1.0], // Top left
-        [1.0, 0.0, 1.0], // Bottom right
-        [1.0, 1.0, 1.0], // Top right
-    ];
-    pub const FACE_Z_BACK: [[f32; 3]; 4] = [
-        [1.0, 0.0, 0.0], // Bottom right
-        [1.0, 1.0, 0.0], // Top right
-        [0.0, 0.0, 0.0], // Bottom left
-        [0.0, 1.0, 0.0], // Top left
-    ];
-    pub const FACE_Y_FRONT: [[f32; 3]; 4] = [
-        [0.0, 1.0, 1.0], // Front left
-        [0.0, 1.0, 0.0], // Back left
-        [1.0, 1.0, 1.0], // Front right
-        [1.0, 1.0, 0.0], // Back right
-    ];
-    pub const FACE_Y_BACK: [[f32; 3]; 4] = [
-        [0.0, 0.0, 0.0], // Front left
-        [0.0, 0.0, 1.0], // Back left
-        [1.0, 0.0, 0.0], // Front right
-        [1.0, 0.0, 1.0], // Back right
-    ];
-    pub const FACE_X_FRONT: [[f32; 3]; 4] = [
-        [1.0, 0.0, 1.0], // Front bottom
-        [1.0, 1.0, 1.0], // Front top
-        [1.0, 0.0, 0.0], // Back bottom
-        [1.0, 1.0, 0.0], // Back top
-    ];
-    pub const FACE_X_BACK: [[f32; 3]; 4] = [
-        [0.0, 0.0, 0.0], // Front bottom
-        [0.0, 1.0, 0.0], // Front top
-        [0.0, 0.0, 1.0], // Back bottom
-        [0.0, 1.0, 1.0], // Back top
-    ];
+/// System that generates chunks in parallel. This doesn't actually load chunks, it just generates
+/// them and stores them.
+pub fn generate_chunks_multithreaded(
+    generated_chunks: ResMut<GeneratedChunks>,
+    chunk_queue: ResMut<ChunkQueue>,
+) {
+    let num_threads = num_cpus::get();
 
-    // --
+    let mut handles = Vec::new();
+    for _ in 0..num_threads {
+        let chunks = Arc::clone(&generated_chunks.map);
+        let queue = Arc::clone(&chunk_queue.0);
 
-    pub const UV_Z_FRONT: [[f32; 2]; 4] = [
-        [0.0, 0.0], // Bottom left
-        [0.0, 1.0], // Top left
-        [1.0, 0.0], // Bottom right
-        [1.0, 1.0], // Top right
-    ];
-    pub const UV_Z_BACK: [[f32; 2]; 4] = [
-        [1.0, 0.0], // Bottom right
-        [1.0, 1.0], // Top right
-        [0.0, 0.0], // Bottom left
-        [0.0, 1.0], // Top left
-    ];
-    pub const UV_Y_FRONT: [[f32; 2]; 4] = [
-        [0.0, 1.0], // Front left
-        [0.0, 0.0], // Back left
-        [1.0, 1.0], // Front right
-        [1.0, 0.0], // Back right
-    ];
-    pub const UV_Y_BACK: [[f32; 2]; 4] = [
-        [0.0, 0.0], // Front left
-        [0.0, 1.0], // Back left
-        [1.0, 0.0], // Front right
-        [1.0, 1.0], // Back right
-    ];
-    pub const UV_X_FRONT: [[f32; 2]; 4] = [
-        [1.0, 0.0], // Front bottom
-        [1.0, 1.0], // Front top
-        [0.0, 0.0], // Back bottom
-        [0.0, 1.0], // Back top
-    ];
-    pub const UV_X_BACK: [[f32; 2]; 4] = [
-        [0.0, 0.0], // Front bottom
-        [0.0, 1.0], // Front top
-        [1.0, 0.0], // Back bottom
-        [1.0, 1.0], // Back top
-    ];
+        let handle = thread::spawn(move || {
+            generate_chunks_worker(chunks, queue);
+        });
 
-    pub const NORMAL_Z_FRONT: [[f32; 3]; 4] = [[0.0, 0.0, 1.0]; 4];
-    pub const NORMAL_Z_BACK: [[f32; 3]; 4] = [[0.0, 0.0, -1.0]; 4];
-    pub const NORMAL_Y_FRONT: [[f32; 3]; 4] = [[0.0, 1.0, 0.0]; 4];
-    pub const NORMAL_Y_BACK: [[f32; 3]; 4] = [[0.0, -1.0, 0.0]; 4];
-    pub const NORMAL_X_FRONT: [[f32; 3]; 4] = [[1.0, 0.0, 0.0]; 4];
-    pub const NORMAL_X_BACK: [[f32; 3]; 4] = [[-1.0, 0.0, 0.0]; 4];
-
-    pub fn new() -> Self {
-        Self {
-            vertices: Vec::new(),
-            normals: Vec::new(),
-            uvs: Vec::new(),
-            indices: Vec::new(),
-        }
+        handles.push(handle);
     }
 
-    fn get_face_indices(starting_index: u32) -> [u32; 6] {
-        [
-            starting_index,
-            starting_index + 2,
-            starting_index + 1,
-            starting_index + 2,
-            starting_index + 3,
-            starting_index + 1,
-        ]
-    }
-
-    fn transform_uvs(uvs: &mut [[f32; 2]; 4], texture_config: BlockTextureConfig) {
-        let one_texel = (1.0 / ATLAS_SIZE.0 as f32, 1.0 / ATLAS_SIZE.1 as f32);
-        let half_texel = (one_texel.0 * 0.5, one_texel.1 * 0.5);
-
-        let starting_x = texture_config.starting_x;
-        let starting_y = texture_config.starting_y;
-
-        // Assumption that every texture is 16x16
-        let ending_x = starting_x + 16;
-        let ending_y = starting_y + 16;
-
-        for uv in uvs.iter_mut() {
-            if uv[0] < 0.5 {
-                uv[0] = starting_x as f32 / ATLAS_SIZE.0 as f32;
-            } else {
-                uv[0] = ending_x as f32 / ATLAS_SIZE.0 as f32;
-            }
-
-            if uv[1] < 0.5 {
-                uv[1] = starting_y as f32 / ATLAS_SIZE.1 as f32;
-            } else {
-                uv[1] = ending_y as f32 / ATLAS_SIZE.1 as f32;
-            }
-        }
-    }
-
-    /// Adds both the vertices and normals of the given face, provided the offset.
-    pub fn add_face(
-        &mut self,
-        mut face: [[f32; 3]; 4],
-        normals: [[f32; 3]; 4],
-        mut uvs: [[f32; 2]; 4],
-        offset: Vec3,
-        texture_config: BlockTextureConfig,
-    ) {
-        for i in 0..4 {
-            for j in 0..3 {
-                face[i][j] += offset[j];
-            }
-        }
-
-        Self::transform_uvs(&mut uvs, texture_config);
-
-        // The starting index of the vertices that are just going to be added to our Vec
-        // E.g. if one face was added, the length would be 4, and the next face will start
-        // from index 4. This is needed to provide the correct indices for each face.
-        let starting_index = self.vertices.len();
-
-        self.vertices.extend_from_slice(&face);
-        self.normals.extend_from_slice(&normals);
-        self.uvs.extend_from_slice(&uvs);
-
-        self.indices
-            .extend_from_slice(&Self::get_face_indices(starting_index as u32));
-    }
-
-    pub fn to_mesh(self) -> Mesh {
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
-
-        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.vertices);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, self.uvs);
-
-        mesh.set_indices(Some(Indices::U32(self.indices)));
-
-        mesh
+    for handle in handles {
+        handle.join().unwrap();
     }
 }

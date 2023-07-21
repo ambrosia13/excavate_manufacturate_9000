@@ -4,6 +4,7 @@ use crate::worldgen::chunk::{
     MAX_CHUNKS_PROCESSED_PER_ITER, VIEW_DISTANCE,
 };
 use bevy::prelude::*;
+use bevy_rapier3d::prelude::*;
 
 pub fn spawn_initial_chunks(
     mut commands: Commands,
@@ -39,12 +40,21 @@ pub fn spawn_initial_chunks(
                 let mesh = chunk.get_mesh();
 
                 commands
-                    .spawn(PbrBundle {
-                        mesh: meshes.add(mesh),
-                        material: materials.add(chunk_material(&asset_server)),
-                        transform: Transform::from_translation(chunk.pos.as_vec3()),
-                        ..default()
-                    })
+                    .spawn((
+                        // Physics component
+                        (
+                            RigidBody::Fixed,
+                            Collider::from_bevy_mesh(&mesh, &ComputedColliderShape::TriMesh)
+                                .unwrap(),
+                        ),
+                        // Geometry component
+                        PbrBundle {
+                            mesh: meshes.add(mesh),
+                            material: materials.add(chunk_material(&asset_server)),
+                            transform: Transform::from_translation(chunk.pos.as_vec3()),
+                            ..default()
+                        },
+                    ))
                     .insert(ChunkedTerrain);
 
                 chunk_map.insert((pos.x, pos.y, pos.z), chunk);
@@ -64,17 +74,15 @@ pub fn load_generated_chunks(
 
     camera_query: Query<&Transform, With<PlayerCamera>>,
 ) {
-    let map = generated_chunks.map.lock().unwrap();
+    let mut map = generated_chunks.map.lock().unwrap();
 
     let camera_transform = camera_query.get_single().unwrap();
     let camera_pos = camera_transform.translation;
     let camera_chunk_pos = (camera_pos / CHUNK_SIZE as f32).as_ivec3();
 
-    let range = (-VIEW_DISTANCE..=VIEW_DISTANCE);
-
     let mut chunks_spawned = 0;
 
-    for (chunk_pos, chunk) in map.iter() {
+    for (chunk_pos, chunk) in map.iter_mut() {
         if chunks_spawned == MAX_CHUNKS_PROCESSED_PER_ITER {
             return;
         }
@@ -84,9 +92,9 @@ pub fn load_generated_chunks(
         // Only load the chunk if it's in the view distance
         // This is required to prevent this system from trying to spawn
         // chunks that the despawn system has just destroyed.
-        if !(range.contains(&offsetted_chunk_pos.x)
-            && range.contains(&offsetted_chunk_pos.y)
-            && range.contains(&offsetted_chunk_pos.z))
+        if !((-VIEW_DISTANCE.0..=VIEW_DISTANCE.0).contains(&offsetted_chunk_pos.x)
+            && (-VIEW_DISTANCE.1..=VIEW_DISTANCE.1).contains(&offsetted_chunk_pos.y)
+            && (-VIEW_DISTANCE.2..=VIEW_DISTANCE.2).contains(&offsetted_chunk_pos.z))
         {
             continue;
         }
@@ -99,12 +107,20 @@ pub fn load_generated_chunks(
         let mesh = chunk.get_mesh();
 
         commands
-            .spawn(PbrBundle {
-                mesh: meshes.add(mesh),
-                material: materials.add(chunk_material(&asset_server)),
-                transform: Transform::from_translation(chunk.pos.as_vec3()),
-                ..default()
-            })
+            .spawn((
+                // Physics component
+                (
+                    RigidBody::Fixed,
+                    Collider::from_bevy_mesh(&mesh, &ComputedColliderShape::TriMesh).unwrap(),
+                ),
+                // Geometry component
+                PbrBundle {
+                    mesh: meshes.add(mesh),
+                    material: materials.add(chunk_material(&asset_server)),
+                    transform: Transform::from_translation(chunk.pos.as_vec3()),
+                    ..default()
+                },
+            ))
             .insert(ChunkedTerrain);
 
         loaded_chunks.chunks.insert(*chunk_pos);
@@ -123,8 +139,6 @@ pub fn unload_chunks(
     let camera_pos = camera_transform.translation;
     let camera_chunk_pos = (camera_pos / CHUNK_SIZE as f32).as_ivec3();
 
-    let range = (-VIEW_DISTANCE..=VIEW_DISTANCE);
-
     let mut chunks_despawned = 0;
 
     for (entity, transform) in chunks_query.iter() {
@@ -137,9 +151,9 @@ pub fn unload_chunks(
         let offsetted_chunk_pos = chunk_position - camera_chunk_pos;
 
         // If the chunk isn't in the view distance, despawn it
-        if !(range.contains(&offsetted_chunk_pos.x)
-            && range.contains(&offsetted_chunk_pos.y)
-            && range.contains(&offsetted_chunk_pos.z))
+        if !((-VIEW_DISTANCE.0..=VIEW_DISTANCE.0).contains(&offsetted_chunk_pos.x)
+            && (-VIEW_DISTANCE.1..=VIEW_DISTANCE.1).contains(&offsetted_chunk_pos.y)
+            && (-VIEW_DISTANCE.2..=VIEW_DISTANCE.2).contains(&offsetted_chunk_pos.z))
         {
             commands.entity(entity).despawn();
 

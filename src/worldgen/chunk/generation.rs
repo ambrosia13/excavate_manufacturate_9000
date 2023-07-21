@@ -8,11 +8,12 @@ use bevy::utils::HashMap;
 use crossbeam::queue::SegQueue;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// Fills the chunk queue with values in the current render distance.
 pub fn fill_chunk_queue(
     generated_chunks: ResMut<GeneratedChunks>,
-    mut chunk_queue: ResMut<ChunkQueue>,
+    chunk_queue: ResMut<ChunkQueue>,
 
     camera_query: Query<&Transform, With<PlayerCamera>>,
 
@@ -31,9 +32,12 @@ pub fn fill_chunk_queue(
 
     let mut num_chunks_added = 0;
 
-    for x in -VIEW_DISTANCE..=VIEW_DISTANCE {
-        for y in -VIEW_DISTANCE..=VIEW_DISTANCE {
-            for z in -VIEW_DISTANCE..=VIEW_DISTANCE {
+    // Generate chunks in a bigger radius than the view distance
+    let dist_mult = 1;
+
+    for x in (-VIEW_DISTANCE.0 * dist_mult)..=(VIEW_DISTANCE.0 * dist_mult) {
+        for y in (-VIEW_DISTANCE.1 * dist_mult)..=(VIEW_DISTANCE.1 * dist_mult) {
+            for z in (-VIEW_DISTANCE.2 * dist_mult)..=(VIEW_DISTANCE.2 * dist_mult) {
                 if num_chunks_added == MAX_CHUNKS_PROCESSED_PER_ITER {
                     return;
                 }
@@ -78,6 +82,8 @@ fn generate_chunks_worker(
 
 /// System that generates chunks in parallel. This doesn't actually load chunks, it just generates
 /// them and stores them.
+///
+/// This is probably the biggest bottleneck when it comes to performance.
 pub fn generate_chunks_multithreaded(
     generated_chunks: ResMut<GeneratedChunks>,
     chunk_queue: ResMut<ChunkQueue>,
@@ -94,9 +100,5 @@ pub fn generate_chunks_multithreaded(
         });
 
         handles.push(handle);
-    }
-
-    for handle in handles {
-        handle.join().unwrap();
     }
 }

@@ -1,8 +1,8 @@
 use crate::worldgen::block::*;
+use crate::worldgen::chunk::{Chunk, CHUNK_SIZE};
 use bevy::prelude::*;
 use bevy::render::mesh::{Indices, PrimitiveTopology};
 use std::hash::{Hash, Hasher};
-use crate::worldgen::chunk::{Chunk, CHUNK_SIZE};
 
 // The following trait implementations are required for using a hash map
 impl PartialEq for Chunk {
@@ -23,6 +23,7 @@ impl Chunk {
         Self {
             pos,
             voxels: [[[Block::Air; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+            mesh: None,
             empty: true,
         }
     }
@@ -312,7 +313,6 @@ impl MeshBuilder {
 
     fn transform_uvs(uvs: &mut [[f32; 2]; 4], texture_config: BlockTextureConfig) {
         let one_texel = (1.0 / ATLAS_SIZE.0 as f32, 1.0 / ATLAS_SIZE.1 as f32);
-        let half_texel = (one_texel.0 * 0.5, one_texel.1 * 0.5);
 
         let starting_x = texture_config.starting_x;
         let starting_y = texture_config.starting_y;

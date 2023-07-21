@@ -12,6 +12,7 @@ noisy_bevy = "0.4.0"
 block-mesh = "0.2.0"
 crossbeam = "0.8.2"
 num_cpus = "1.16.0"
+bevy_rapier3d = "0.22.0"
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]

@@ -1,5 +1,3 @@
-use bevy::prelude::*;
-
 pub const ATLAS_SIZE: (usize, usize) = (32, 32);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

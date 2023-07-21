@@ -15,13 +15,16 @@ use std::sync::{Arc, Mutex};
 pub const CHUNK_SIZE: usize = 16;
 
 // Should eventually be configurable
-pub const VIEW_DISTANCE: i32 = 16;
-pub const MAX_CHUNKS_PROCESSED_PER_ITER: usize = 16;
+pub const VIEW_DISTANCE: (i32, i32, i32) = (8, 8, 8);
+
+pub const MAX_CHUNKS_PROCESSED_PER_ITER: usize = 32;
+pub const CHUNK_ITERATION_INTERVAL: f32 = 0.01;
 
 #[derive(Debug)]
 pub struct Chunk {
     pub pos: IVec3,
     pub voxels: [[[Block; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+    pub mesh: Option<Mesh>,
 
     empty: bool,
 }

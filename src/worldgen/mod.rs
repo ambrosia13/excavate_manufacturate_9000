@@ -14,7 +14,7 @@ pub struct WorldgenPlugin;
 impl Plugin for WorldgenPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(ChunkGenerationTimer(Timer::from_seconds(
-            0.01,
+            chunk::CHUNK_ITERATION_INTERVAL,
             TimerMode::Repeating,
         )))
         .insert_resource(GeneratedChunks {

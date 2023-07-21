@@ -3,13 +3,14 @@ mod worldgen;
 
 use bevy::pbr::wireframe::WireframePlugin;
 use bevy::prelude::*;
-
 use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy_rapier3d::prelude::*;
 
 fn main() {
     App::new()
         .insert_resource(Msaa::Off)
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::default().with_physics_scale(1.0))
         .add_plugins(WireframePlugin)
         .add_plugins(camera::CameraPlugin)
         .add_plugins(worldgen::WorldgenPlugin)

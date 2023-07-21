@@ -9,12 +9,11 @@ impl Plugin for CameraPlugin {
         app.add_systems(Startup, spawn_camera).add_systems(
             Update,
             (
-                // update_camera_position,
-                handle_input_movement.before(tick_player_movement),
+                handle_input_movement,
+                handle_input_jump,
+                handle_input_rotation,
                 tick_player_movement,
-                clamp_velocity,
-                update_camera_rotation,
-                //apply_gravity,
+                dampen_velocity,
             ),
         );
     }
@@ -47,7 +46,7 @@ fn spawn_camera(mut commands: Commands) {
         .insert(PlayerCamera)
         .insert(PlayerCameraMovement {
             velocity: Vec3::ZERO,
-            acceleration: Vec3::new(0.0, -0.5, 0.0),
+            acceleration: Vec3::new(0.0, -1.0, 0.0),
         });
 }
 
@@ -72,8 +71,8 @@ fn tick_player_movement(
     controller.translation = Some(movement.velocity);
 }
 
-/// Dampens the velocity when the player is grounded.
-fn clamp_velocity(
+/// Dampens the velocity under certain conditions.
+fn dampen_velocity(
     mut query: Query<
         (
             &mut PlayerCameraMovement,
@@ -84,11 +83,11 @@ fn clamp_velocity(
 ) {
     if let Ok((mut movement, output)) = query.get_single_mut() {
         if output.grounded {
-            movement.velocity.x *= 0.8;
-            movement.velocity.z *= 0.8;
-
             movement.velocity.y = movement.velocity.y.max(0.0);
         }
+
+        movement.velocity.x *= 0.8;
+        movement.velocity.z *= 0.8;
     }
 }
 
@@ -115,27 +114,46 @@ fn handle_input_movement(
     };
 
     if input.pressed(KeyCode::W) {
-        movement += forward * delta;
+        movement += forward;
     }
     if input.pressed(KeyCode::S) {
-        movement -= forward * delta;
+        movement -= forward;
     }
 
     if input.pressed(KeyCode::D) {
-        movement += right * delta;
+        movement += right;
     }
     if input.pressed(KeyCode::A) {
-        movement -= right * delta;
+        movement -= right;
     }
 
-    const MOVEMENT_SPEED: f32 = 0.01;
+    const MOVEMENT_SPEED: f32 = 1.5;
     let movement = MOVEMENT_SPEED * movement.normalize_or_zero();
 
-    player_movement.velocity += movement;
+    player_movement.velocity += movement * delta;
+}
+
+fn handle_input_jump(
+    mut query: Query<
+        (
+            &mut PlayerCameraMovement,
+            &KinematicCharacterControllerOutput,
+        ),
+        With<PlayerCamera>,
+    >,
+    input: Res<Input<KeyCode>>,
+) {
+    if let Ok((mut movement, output)) = query.get_single_mut() {
+        const JUMP_VELOCITY: f32 = 0.25;
+
+        if output.grounded && input.just_pressed(KeyCode::Space) {
+            movement.velocity += Vec3::new(0.0, JUMP_VELOCITY, 0.0);
+        }
+    }
 }
 
 /// The same system as above, but for rotation.
-fn update_camera_rotation(
+fn handle_input_rotation(
     mut transform_query: Query<&mut Transform, With<PlayerCamera>>,
     mut motion: EventReader<MouseMotion>,
 ) {

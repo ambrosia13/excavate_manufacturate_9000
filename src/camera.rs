@@ -37,6 +37,7 @@ fn spawn_camera(mut commands: Commands) {
             ..Default::default()
         })
         .insert(RigidBody::KinematicPositionBased)
+        .insert(LockedAxes::ROTATION_LOCKED)
         .insert(Collider::capsule(
             Vec3::new(0.0, -1.0, 0.0),
             Vec3::new(0.0, 2.0, 0.0),
